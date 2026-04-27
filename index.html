@@ -28,15 +28,10 @@
         🔗 Google AI Studio에서 무료 발급
       </a>
       <div class="input-wrap">
-        <input type="password" id="apiKeyInput" class="text-input"
+        <input type="text" id="apiKeyInput" class="text-input"
                placeholder="AIza... 로 시작하는 키 입력"
-               autocomplete="off" autocorrect="off" spellcheck="false">
-        <button class="pw-toggle" onclick="togglePw('apiKeyInput')" type="button" aria-label="비밀번호 표시">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-        </button>
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+               data-lpignore="true" data-form-type="other" data-1p-ignore="true">
       </div>
       <button class="btn-primary" onclick="saveApiKey()">저장하고 시작 →</button>
     </div>
@@ -50,15 +45,10 @@
       <div class="settings-block">
         <label class="settings-label">Gemini API 키</label>
         <div class="input-wrap">
-          <input type="password" id="settingsApiKeyInput" class="text-input"
+          <input type="text" id="settingsApiKeyInput" class="text-input"
                  placeholder="API 키 입력 (변경 시에만)"
-                 autocomplete="off" spellcheck="false">
-          <button class="pw-toggle" onclick="togglePw('settingsApiKeyInput')" type="button" aria-label="비밀번호 표시">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-              <circle cx="12" cy="12" r="3"/>
-            </svg>
-          </button>
+                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                 data-lpignore="true" data-form-type="other" data-1p-ignore="true">
         </div>
       </div>
 

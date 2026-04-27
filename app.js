@@ -183,8 +183,16 @@ function saveSettings() {
   toast(`설정 저장됨 (모델: ${S.model})`);
 }
 
+function maskKey(key) {
+  if (!key) return '';
+  if (key.length <= 8) return '●'.repeat(key.length);
+  return key.slice(0, 4) + '●'.repeat(Math.max(8, key.length - 8)) + key.slice(-4);
+}
+
 function showSettings() {
-  id('settingsApiKeyInput').value = '';
+  const inp = id('settingsApiKeyInput');
+  inp.value = '';
+  inp.placeholder = S.apiKey ? `현재: ${maskKey(S.apiKey)}` : 'API 키 입력 (변경 시에만)';
   const sel = id('modelSelect');
   if (![...sel.options].some(o => o.value === S.model)) {
     const opt = document.createElement('option');
@@ -889,10 +897,7 @@ function toggleFilter(catId) {
   renderAll();
 }
 
-function togglePw(inputId) {
-  const el = id(inputId);
-  if (el) el.type = el.type === 'password' ? 'text' : 'password';
-}
+function togglePw(inputId) { /* no-op: inputs are type=text */ }
 
 // ── Modal Helpers ────────────────────────────────────────────
 function showModal(modalId) {
