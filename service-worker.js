@@ -2,7 +2,7 @@
    상수뉴스 — service-worker.js
    ================================================================ */
 
-const CACHE_VER  = 'sangsunews-v6';
+const CACHE_VER = 'sangsunews-v7';
 const STATIC     = [
   './',
   './index.html',
@@ -39,6 +39,12 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+   
+   // ⭐ 추가: http/https가 아닌 요청은 무시 (chrome-extension 등)
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return;
+  }
+
 
   // External API calls: network-first, stale-while-revalidate fallback
   const isApi = url.hostname.includes('googleapis.com')
@@ -60,8 +66,12 @@ async function cacheFirst(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
-      const cache = await caches.open(CACHE_VER);
-      cache.put(request, response.clone());
+      try {
+        const cache = await caches.open(CACHE_VER);
+        await cache.put(request, response.clone());
+      } catch (cacheError) {
+        console.warn('캐싱 실패 (무시):', cacheError);
+      }
     }
     return response;
   } catch {
@@ -71,7 +81,6 @@ async function cacheFirst(request) {
     });
   }
 }
-
 async function networkFirst(request) {
   try {
     const response = await fetch(request);
