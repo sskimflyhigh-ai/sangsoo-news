@@ -3,7 +3,7 @@
    ================================================================ */
 
 const CACHE_VER = 'sangsunews-v7';
-const STATIC     = [
+const STATIC    = [
   './',
   './index.html',
   './style.css',
@@ -13,7 +13,7 @@ const STATIC     = [
   './icons/icon-512.svg',
 ];
 
-// ── Install: pre-cache static assets ─────────────────────────
+// ── Install ───────────────────────────────────────────────────
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_VER)
@@ -22,78 +22,67 @@ self.addEventListener('install', event => {
   );
 });
 
-// ── Activate: remove old caches ──────────────────────────────
+// ── Activate ─────────────────────────────────────────────────
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(
         keys.filter(k => k !== CACHE_VER).map(k => caches.delete(k))
       ))
-      .then(() => self.clients.claim())
+      .then(() => {
+        console.log('[SW] 활성화됨 — 캐시 버전:', CACHE_VER);
+        return self.clients.claim();
+      })
   );
 });
 
-// ── Fetch strategy ───────────────────────────────────────────
+// ── Fetch ─────────────────────────────────────────────────────
 self.addEventListener('fetch', event => {
   const { request } = event;
+
+  // ① http/https 요청만 처리 — chrome-extension:// 등 완전 차단
+  if (!request.url.startsWith('http')) return;
+
+  // ② GET 요청만 처리
   if (request.method !== 'GET') return;
 
+  // ③ 외부 도메인(RSS, Gemini, allorigins 등)은 SW 개입 없이 그대로 통과
+  //    앱 레벨(localStorage)에서 캐싱하므로 SW 캐시 불필요
   const url = new URL(request.url);
-   
-   // ⭐ 추가: http/https가 아닌 요청은 무시 (chrome-extension 등)
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    return;
-  }
+  if (url.origin !== self.location.origin) return;
 
-
-  // External API calls: network-first, stale-while-revalidate fallback
-  const isApi = url.hostname.includes('googleapis.com')
-             || url.hostname.includes('rss2json.com')
-             || url.hostname.includes('generativelanguage');
-
-  if (isApi) {
-    event.respondWith(networkFirst(request));
-    return;
-  }
-
-  // Static assets: cache-first
+  // ④ 같은 출처 정적 파일만 캐시-퍼스트
   event.respondWith(cacheFirst(request));
 });
 
+// ── Cache-first with safe cache.put ──────────────────────────
 async function cacheFirst(request) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
   try {
+    const cached = await caches.match(request);
+    if (cached) {
+      console.log('[SW] 캐시 적중:', request.url.split('/').pop() || '/');
+      return cached;
+    }
+
+    console.log('[SW] 새 fetch:', request.url.split('/').pop() || '/');
     const response = await fetch(request);
+
     if (response.ok) {
+      // cache.put 실패(크롬 확장 등 이상 환경)해도 응답은 정상 반환
       try {
         const cache = await caches.open(CACHE_VER);
         await cache.put(request, response.clone());
-      } catch (cacheError) {
-        console.warn('캐싱 실패 (무시):', cacheError);
+      } catch (e) {
+        console.warn('[SW] 캐시 저장 건너뜀:', e.message);
       }
     }
+
     return response;
-  } catch {
+  } catch (e) {
+    console.error('[SW] fetch 실패:', e.message);
     return new Response('오프라인 상태입니다.', {
       status: 503,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-    });
-  }
-}
-async function networkFirst(request) {
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(CACHE_VER);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    const cached = await caches.match(request);
-    return cached || new Response(JSON.stringify({ error: 'offline' }), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json' },
     });
   }
 }

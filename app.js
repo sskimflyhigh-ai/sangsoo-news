@@ -378,8 +378,12 @@ async function fetchFeed(cat) {
 }
 
 // ── Gemini Analysis ──────────────────────────────────────────
+
+const FALLBACK_MODELS = ['gemini-2.0-flash', 'gemini-flash-latest'];
+
 async function analyzeItem(item, catId, reason = '알 수 없음', maxTokens = 8192) {
   const cacheKey = CFG.cachePrefix + 'ai_' + item.id;
+
   if (maxTokens === 8192) {
     const hit = readCache(cacheKey, CFG.analysisTtl);
     if (hit) { console.log(`📦 캐시 사용: ${item.title.slice(0, 30)}`); return hit; }
@@ -388,11 +392,124 @@ async function analyzeItem(item, catId, reason = '알 수 없음', maxTokens = 8
     console.log(`🔄 MAX_TOKENS 재시도 — maxTokens: ${maxTokens}`);
   }
 
-  const cat  = CATEGORIES.find(c => c.id === catId);
-  const isEn = cat?.lang === 'en';
+  const cat    = CATEGORIES.find(c => c.id === catId);
+  const isEn   = cat?.lang === 'en';
+  const prompt = _buildPrompt(item, isEn);
 
-  const prompt = isEn
-    ? `이 영어 뉴스를 한국어로 번역하고 분석해 주세요.
+  // 기본 모델 + 폴백 모델 (중복 제거)
+  const modelQueue = [...new Set([S.model, ...FALLBACK_MODELS])];
+
+  for (let mi = 0; mi < modelQueue.length; mi++) {
+    const model = modelQueue[mi];
+    if (mi > 0) console.log(`⚠️ ${modelQueue[mi - 1]} 실패 → ${model} 폴백 시도`);
+
+    // 각 모델당 최대 2회 시도 (503 시 5초 대기 후 재시도)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        console.log(`🔄 서버 과부하(503) — 5초 대기 후 ${model} 재시도...`);
+        await sleep(5000);
+      } else if (mi === 0) {
+        console.log(`🌐 1차 시도: ${model}`);
+      } else {
+        console.log(`🌐 ${mi + 1}차 폴백: ${model}`);
+      }
+
+      try {
+        const result = await _callGemini(model, prompt, maxTokens);
+        writeCache(cacheKey, result);
+        console.log(`✅ 분석 완료 [${model}]: ${item.title.slice(0, 40)}`);
+        return result;
+
+      } catch (err) {
+        // MAX_TOKENS: 모델 유지, 토큰만 늘려서 재시도
+        if (err._maxTokens) {
+          if (maxTokens < 16384) {
+            console.warn('⚠️ MAX_TOKENS 감지 — 16384 토큰으로 재시도');
+            return analyzeItem(item, catId, reason, 16384);
+          }
+          throw new Error('AI 응답이 너무 길어 잘렸습니다. 다시 시도해주세요.');
+        }
+        // 503 첫 번째 시도: 루프 계속 (5초 대기 후 재시도)
+        if (err._status === 503 && attempt === 0) continue;
+        // 503 두 번째 시도: 다음 모델로 폴백
+        if (err._status === 503) break;
+        // 503 외 에러(400·404·429 등): 즉시 전파
+        throw err;
+      }
+    }
+  }
+
+  // 모든 모델·재시도 소진
+  throw new Error('AI 서버가 일시적으로 모두 바쁩니다. 1~5분 후 다시 시도해주세요.');
+}
+
+// 실제 Gemini API fetch — 성공 시 파싱된 결과 반환, 실패 시 ._status 태그 에러 throw
+async function _callGemini(model, prompt, maxTokens) {
+  const endpoint = `${CFG.geminiBase}/${model}:generateContent?key=${S.apiKey}`;
+  console.log(`🌐 fetch: generativelanguage.googleapis.com — ${model}`);
+
+  const resp = await fetch(endpoint, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({
+      contents:         [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature:     0.7,
+        maxOutputTokens: maxTokens,
+        thinkingConfig:  { thinkingBudget: 0 },
+      },
+    }),
+    signal: AbortSignal.timeout(CFG.geminiTimeout),
+  });
+
+  console.log(`📨 응답: HTTP ${resp.status} [${model}]`);
+
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    const msg  = body?.error?.message || `HTTP ${resp.status}`;
+    console.error(`❌ ${model} 에러: ${resp.status} —`, msg);
+    const isZeroQuota = msg.includes('limit: 0') || msg.includes('free_tier');
+    const e = new Error(
+      resp.status === 503 ? 'AI 서버가 일시적으로 바쁩니다. 자동으로 재시도 중...' :
+      resp.status === 404 ? `[NO_MODEL] ${model} 모델을 찾을 수 없습니다. 설정에서 다른 모델을 선택해주세요.` :
+      resp.status === 429 ? (isZeroQuota
+        ? `[NO_QUOTA] ${model} 모델은 무료 사용이 불가합니다. 설정에서 gemini-2.5-flash로 변경해주세요.`
+        : 'AI 할당량 초과입니다. 잠시 후 다시 시도해주세요.') :
+      resp.status === 400 ? 'API 키가 유효하지 않습니다.' :
+      msg
+    );
+    e._status = resp.status;
+    throw e;
+  }
+
+  const data      = await resp.json();
+  const candidate = data.candidates?.[0];
+  const finish    = candidate?.finishReason || '알 수 없음';
+  const usage     = data.usageMetadata || {};
+  console.log(`🏁 finishReason: ${finish} [${model}]`);
+  console.log(`📊 토큰:`, {
+    prompt:   usage.promptTokenCount     || 0,
+    thinking: usage.thoughtsTokenCount   || 0,
+    output:   usage.candidatesTokenCount || 0,
+    total:    usage.totalTokenCount      || 0,
+  });
+
+  if (finish === 'MAX_TOKENS') {
+    const e = new Error('MAX_TOKENS');
+    e._maxTokens = true;
+    throw e;
+  }
+
+  const raw   = candidate?.content?.parts?.[0]?.text || '';
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('응답 파싱 실패');
+
+  return JSON.parse(match[0]);
+}
+
+// 언어별 프롬프트 생성
+function _buildPrompt(item, isEn) {
+  if (isEn) return `이 영어 뉴스를 한국어로 번역하고 분석해 주세요.
 
 제목: ${item.title}
 내용: ${item.description || '(본문 없음)'}
@@ -416,8 +533,9 @@ async function analyzeItem(item, catId, reason = '알 수 없음', maxTokens = 8
     }
   ]
 }
-stocks는 직접 관련 종목만 최대 4개. 관련 없으면 빈 배열 [].`
-    : `다음 경제 뉴스를 분석해 주세요.
+stocks는 직접 관련 종목만 최대 4개. 관련 없으면 빈 배열 [].`;
+
+  return `다음 경제 뉴스를 분석해 주세요.
 
 제목: ${item.title}
 내용: ${item.description || '(본문 없음)'}
@@ -441,65 +559,6 @@ stocks는 직접 관련 종목만 최대 4개. 관련 없으면 빈 배열 [].`
   ]
 }
 stocks는 직접 관련 종목만 최대 4개. 관련 없으면 빈 배열 [].`;
-
-  const endpoint = `${CFG.geminiBase}/${S.model}:generateContent?key=${S.apiKey}`;
-  console.log(`🌐 fetch 시작: generativelanguage.googleapis.com — 모델: ${S.model}`);
-  const resp = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature:   0.7,
-        maxOutputTokens: maxTokens,
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    }),
-    signal: AbortSignal.timeout(CFG.geminiTimeout),
-  });
-
-  console.log(`📨 응답 받음: HTTP ${resp.status}`);
-
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    const msg = err?.error?.message || `API 오류 ${resp.status}`;
-    console.error(`❌ API 에러: HTTP ${resp.status} —`, msg);
-    if (resp.status === 404) throw new Error(`[NO_MODEL] ${S.model} 모델을 찾을 수 없습니다. 설정에서 다른 모델을 선택해주세요.`);
-    if (resp.status === 429) {
-      const isZeroQuota = msg.includes('limit: 0') || msg.includes('free_tier');
-      if (isZeroQuota) throw new Error(`[NO_QUOTA] ${S.model} 모델은 무료 사용이 불가합니다. 설정에서 gemini-2.5-flash로 변경해주세요.`);
-      throw new Error('AI 할당량 초과입니다. 잠시 후 다시 시도해주세요.');
-    }
-    if (resp.status === 400) throw new Error('API 키가 유효하지 않습니다.');
-    throw new Error(msg);
-  }
-
-  const data      = await resp.json();
-  const candidate = data.candidates?.[0];
-  const finish    = candidate?.finishReason || '알 수 없음';
-  const usage     = data.usageMetadata || {};
-  console.log(`🏁 finishReason: ${finish}`);
-  console.log(`📊 토큰:`, {
-    prompt:   usage.promptTokenCount     || 0,
-    thinking: usage.thoughtsTokenCount   || 0,
-    output:   usage.candidatesTokenCount || 0,
-    total:    usage.totalTokenCount      || 0,
-  });
-
-  if (finish === 'MAX_TOKENS' && maxTokens < 16384) {
-    console.warn('⚠️ MAX_TOKENS 감지 — 16384 토큰으로 1회 재시도');
-    return analyzeItem(item, catId, reason, 16384);
-  }
-  if (finish === 'MAX_TOKENS') throw new Error('AI 응답이 너무 길어 잘렸습니다. 다시 시도해주세요.');
-
-  const raw   = candidate?.content?.parts?.[0]?.text || '';
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('응답 파싱 실패');
-
-  const result = JSON.parse(match[0]);
-  writeCache(cacheKey, result);
-  console.log(`✅ 분석 완료: ${item.title.slice(0, 40)}`);
-  return result;
 }
 
 // ── Rendering ────────────────────────────────────────────────
@@ -770,7 +829,7 @@ function patchCardError(newsId, catId, msg) {
   const display    = isNoModel ? msg.replace('[NO_MODEL] ', '')
                    : isNoQuota ? msg.replace('[NO_QUOTA] ', '')
                    : is429     ? 'AI 할당량 초과입니다. 잠시 후 다시 시도해주세요.'
-                               : 'AI 분석 실패. 다시 시도해주세요.';
+                               : msg || 'AI 분석 실패. 다시 시도해주세요.';
 
   body.innerHTML = `
     <div class="analysis-error">
