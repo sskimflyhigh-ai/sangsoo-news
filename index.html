@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="AI 기반 한국·미국 경제 뉴스 분석">
+  <meta name="theme-color" id="themeColorMeta" content="#2E7D32">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="상수뉴스">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.svg">
+  <link rel="stylesheet" href="style.css">
+  <title>상수뉴스</title>
+</head>
+<body>
+
+  <!-- ===== API KEY MODAL ===== -->
+  <div id="apiKeyModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="apiKeyTitle">
+    <div class="modal-box">
+      <div class="modal-icon">📈</div>
+      <h2 id="apiKeyTitle" class="modal-title">상수뉴스 시작하기</h2>
+      <p class="modal-desc">
+        Google Gemini API 키를 입력하면 AI가 뉴스를 분석해 드립니다.<br>
+        무료로 발급 가능합니다.
+      </p>
+      <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="external-link">
+        🔗 Google AI Studio에서 무료 발급
+      </a>
+      <div class="input-wrap">
+        <input type="password" id="apiKeyInput" class="text-input"
+               placeholder="AIza... 로 시작하는 키 입력"
+               autocomplete="off" autocorrect="off" spellcheck="false">
+        <button class="pw-toggle" onclick="togglePw('apiKeyInput')" type="button" aria-label="비밀번호 표시">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
+      <button class="btn-primary" onclick="saveApiKey()">저장하고 시작 →</button>
+    </div>
+  </div>
+
+  <!-- ===== SETTINGS MODAL ===== -->
+  <div id="settingsModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal-box">
+      <h2 id="settingsTitle" class="modal-title">⚙️ 설정</h2>
+
+      <div class="settings-block">
+        <label class="settings-label">Gemini API 키</label>
+        <div class="input-wrap">
+          <input type="password" id="settingsApiKeyInput" class="text-input"
+                 placeholder="API 키 입력 (변경 시에만)"
+                 autocomplete="off" spellcheck="false">
+          <button class="pw-toggle" onclick="togglePw('settingsApiKeyInput')" type="button" aria-label="비밀번호 표시">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="settings-block">
+        <label class="settings-label">AI 분석 모델</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="modelSelect" class="select-input" style="flex:1">
+            <option value="gemini-2.5-flash">gemini-2.5-flash — 빠르고 정확함 ⭐ 권장</option>
+            <option value="gemini-2.0-flash">gemini-2.0-flash — 가볍고 빠름</option>
+            <option value="gemini-2.5-pro">gemini-2.5-pro — 가장 정확함 (느림)</option>
+            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite — 가장 빠름</option>
+            <option value="gemini-flash-latest">gemini-flash-latest — 항상 최신 버전</option>
+          </select>
+          <button class="btn-secondary small" onclick="loadAvailableModels()" id="loadModelsBtn" type="button" title="API 키로 사용 가능한 모델 조회">🔍</button>
+        </div>
+      </div>
+
+      <div class="settings-block">
+        <label class="settings-label">카테고리 관리</label>
+        <div class="categories-list" id="categoriesList">
+          <!-- rendered by renderCategoriesList() -->
+        </div>
+        <div class="cat-add-form">
+          <input type="text" id="catName" class="text-input" placeholder="카테고리 이름 (예: 반도체)" autocomplete="off" spellcheck="false">
+          <input type="text" id="catQuery" class="text-input" placeholder="검색어 (예: 반도체 주가)" autocomplete="off" spellcheck="false">
+          <div style="display:flex;gap:6px">
+            <select id="catLang" class="select-input" style="flex:1">
+              <option value="ko">🇰🇷 한국어</option>
+              <option value="en">🇺🇸 영어</option>
+            </select>
+            <button class="btn-secondary small" onclick="addCategory()" type="button">+ 추가</button>
+          </div>
+        </div>
+        <button class="btn-secondary small" onclick="resetCategories()" type="button" style="align-self:flex-start">↺ 기본값 복원</button>
+      </div>
+
+      <div class="settings-block">
+        <label class="settings-label">캐시 관리</label>
+        <div class="settings-row">
+          <button class="btn-secondary small" onclick="clearAnalysisCache()">분석 캐시 초기화</button>
+          <button class="btn-secondary small" onclick="clearAllCache()">전체 캐시 초기화</button>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeSettings()">취소</button>
+        <button class="btn-primary" onclick="saveSettings()">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== APP HEADER ===== -->
+  <header class="app-header" id="appHeader">
+    <div class="header-brand">
+      <svg class="brand-icon" viewBox="0 0 192 192" xmlns="http://www.w3.org/2000/svg">
+        <rect x="20" y="118" width="18" height="36" rx="3" fill="rgba(255,255,255,0.5)"/>
+        <rect x="47" y="94" width="18" height="60" rx="3" fill="rgba(255,255,255,0.65)"/>
+        <rect x="74" y="72" width="18" height="82" rx="3" fill="rgba(255,255,255,0.82)"/>
+        <rect x="101" y="48" width="18" height="106" rx="3" fill="white"/>
+        <polyline points="29,113 56,89 83,67 110,45" fill="none" stroke="#34d399" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="110" cy="45" r="7" fill="#34d399"/>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-title">상수뉴스</span>
+        <span class="brand-updated" id="lastUpdated"></span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" id="refreshBtn" onclick="handleRefresh()" title="새로고침" aria-label="새로고침">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polyline points="23 4 23 10 17 10"/>
+          <polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="themeBtn" onclick="toggleTheme()" title="테마 변경" aria-label="테마 변경">
+        <svg id="iconSun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <svg id="iconMoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="hidden">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+      <button class="icon-btn" onclick="showSettings()" title="설정" aria-label="설정">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===== TAB NAVIGATION ===== -->
+  <nav class="tab-nav" role="tablist" aria-label="뉴스 필터">
+    <button class="tab-btn active" role="tab" data-tab="all" onclick="setTab('all')">전체</button>
+    <button class="tab-btn" role="tab" data-tab="ko" onclick="setTab('ko')">🇰🇷 한국</button>
+    <button class="tab-btn" role="tab" data-tab="en" onclick="setTab('en')">🇺🇸 미국</button>
+  </nav>
+
+  <!-- ===== SOURCE FILTER CHIPS ===== -->
+  <div class="chips-bar" id="chipsBar" aria-label="신문사 필터">
+    <!-- injected by JS -->
+  </div>
+
+  <!-- ===== GLOBAL LOADING ===== -->
+  <div id="globalLoading" class="global-loading hidden">
+    <div class="loading-spinner large"></div>
+    <p id="loadingText" class="loading-text">뉴스를 불러오는 중...</p>
+  </div>
+
+  <!-- ===== NEWS MAIN CONTENT ===== -->
+  <main class="news-main" id="newsMain" role="main">
+    <!-- feed groups rendered here -->
+  </main>
+
+  <!-- ===== TOAST ===== -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="app-footer">
+    <p class="disclaimer">본 앱은 개인 학습·참고용으로 제작된 도구입니다. AI가 생성한 분석은 참고 자료이며, 투자 자문이나 권유가 아닙니다. 모든 투자 결정은 본인의 책임하에 신중히 판단하시기 바랍니다.</p>
+    <p class="footer-sub">개인 사용 전용 · Powered by Google Gemini</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
