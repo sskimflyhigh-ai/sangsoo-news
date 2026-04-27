@@ -4,6 +4,19 @@
    상수뉴스 — app.js
    ================================================================ */
 
+// ── Debug Mode (?debug=1) ─────────────────────────────────────
+const DBG = new URLSearchParams(location.search).get('debug') === '1';
+function dbg(msg) {
+  console.log('[DBG]', msg);
+  if (!DBG) return;
+  const box = document.getElementById('debugBox');
+  if (!box) return;
+  const line = document.createElement('div');
+  line.textContent = `[${new Date().toLocaleTimeString('ko')}] ${msg}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
 // ── Config ───────────────────────────────────────────────────
 const CFG = {
   rss2json:     'https://api.rss2json.com/v1/api.json',
@@ -49,6 +62,14 @@ const S = {
 
 // ── Bootstrap ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  if (DBG) {
+    const box = document.getElementById('debugBox');
+    if (box) box.style.display = 'block';
+    dbg('=== 🔍 디버그 모드 ON ===');
+    dbg(`UA: ${navigator.userAgent.substring(0, 100)}`);
+    dbg(`localStorage 키: ${Object.keys(localStorage).join(', ') || '(없음)'}`);
+  }
+
   loadCategories();
   loadSettings();
   applyTheme();
@@ -453,13 +474,23 @@ async function analyzeItem(item, catId, reason = '알 수 없음', maxTokens = 8
 
 // 실제 Gemini API fetch — 성공 시 파싱된 결과 반환, 실패 시 ._status 태그 에러 throw
 async function _callGemini(model, prompt, maxTokens) {
-  const endpoint = `${CFG.geminiBase}/${model}:generateContent?key=${S.apiKey}`;
+  const endpoint = `${CFG.geminiBase}/${model}:generateContent?key=${S.apiKey}&_t=${Date.now()}`;
   console.log(`🌐 fetch: generativelanguage.googleapis.com — ${model}`);
+  if (DBG) {
+    const k = S.apiKey || '';
+    dbg(`_callGemini: ${model}`);
+    dbg(`키: ${k.slice(0, 4)}...${k.slice(-4)} (${k.length}자)`);
+    dbg(`URL 끝: ...${endpoint.slice(-30)}`);
+  }
+  console.log(`📤 fetch 옵션: cache=no-store, credentials=omit, keyLength=${(S.apiKey||'').length}`);
 
   const resp = await fetch(endpoint, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({
+    method:      'POST',
+    headers:     { 'Content-Type': 'application/json' },
+    cache:       'no-store',
+    credentials: 'omit',
+    mode:        'cors',
+    body:        JSON.stringify({
       contents:         [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature:     0.7,
@@ -471,11 +502,14 @@ async function _callGemini(model, prompt, maxTokens) {
   });
 
   console.log(`📨 응답: HTTP ${resp.status} [${model}]`);
+  dbg(`HTTP ${resp.status} [${model}]`);
 
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));
     const msg  = body?.error?.message || `HTTP ${resp.status}`;
     console.error(`❌ ${model} 에러: ${resp.status} —`, msg);
+    dbg(`❌ ${resp.status}: ${msg.substring(0, 150)}`);
+    if (DBG) alert(`[DEBUG]\nHTTP ${resp.status}\n모델: ${model}\n키길이: ${(S.apiKey||'').length}\n첫4: ${(S.apiKey||'').slice(0,4)}\n에러: ${msg.substring(0, 200)}`);
     const isZeroQuota = msg.includes('limit: 0') || msg.includes('free_tier');
     const e = new Error(
       resp.status === 503 ? 'AI 서버가 일시적으로 바쁩니다. 자동으로 재시도 중...' :
@@ -741,6 +775,16 @@ let queueRunning = false;
 
 function onCardClick(newsId, catId) {
   console.log(`🖱️ 카드 클릭됨: ${newsId}`);
+  if (DBG) {
+    const k = S.apiKey || '';
+    dbg(`--- 카드 클릭 ---`);
+    dbg(`키 길이: ${k.length}`);
+    dbg(`첫4자: "${k.substring(0, 4)}"`);
+    dbg(`끝4자: "${k.substring(k.length - 4)}"`);
+    dbg(`앞뒤 공백: ${k !== k.trim()}`);
+    dbg(`charCode[0]: ${k.charCodeAt(0)}, charCode[-1]: ${k.charCodeAt(k.length - 1)}`);
+    dbg(`localStorage gemini_key 길이: ${(localStorage.getItem('gemini_key') || '').length}`);
+  }
 
   if (S.expandedIds.has(newsId)) {
     if (S.analyzingIds.has(newsId)) return;
