@@ -30,9 +30,8 @@ self.addEventListener('activate', event => {
         keys.filter(k => k !== CACHE_VER).map(k => caches.delete(k))
       ))
       .then(() => {
-        console.log('[SW] 활성화됨 - 캐시 버전:', CACHE_VER);
-        return self.clients.claim();
-      })
+  console.log('[SW] 활성화됨 - 캐시 버전:', CACHE_VER);
+})
   );
 });
 // ── Fetch ─────────────────────────────────────────────────────
