@@ -2,7 +2,7 @@
    상수뉴스 — service-worker.js
    ================================================================ */
 
-const CACHE_VER = 'sangsunews-v7';
+const CACHE_VER = 'sangsunews-v8';
 const STATIC    = [
   './',
   './index.html',
