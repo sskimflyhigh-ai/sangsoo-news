@@ -474,7 +474,7 @@ async function analyzeItem(item, catId, reason = '알 수 없음', maxTokens = 8
 
 // 실제 Gemini API fetch — 성공 시 파싱된 결과 반환, 실패 시 ._status 태그 에러 throw
 async function _callGemini(model, prompt, maxTokens) {
-  const endpoint = `${CFG.geminiBase}/${model}:generateContent?key=${S.apiKey}&_t=${Date.now()}`;
+  const endpoint = `${CFG.geminiBase}/${model}:generateContent?key=${S.apiKey}`;
   console.log(`🌐 fetch: generativelanguage.googleapis.com — ${model}`);
   if (DBG) {
     const k = S.apiKey || '';
