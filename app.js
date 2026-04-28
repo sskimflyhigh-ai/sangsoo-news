@@ -1106,24 +1106,6 @@ window.debugStorage = debugStorage;
 function registerSW() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js')
-      .then(reg => {
-        // 1시간마다 새 SW 있는지 자동 체크
-        setInterval(() => reg.update(), 60 * 60 * 1000);
-        // 페이지 로드 시에도 한 번 체크
-        reg.update();
-        // 새 SW 발견 시 자동 갱신
-        reg.addEventListener('updatefound', () => {
-          const newWorker = reg.installing;
-          if (newWorker) {
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'activated') {
-                console.log('[SW] 새 버전 활성화 - 새로고침');
-                window.location.reload();
-              }
-            });
-          }
-        });
-      })
       .catch(e => console.warn('[SW]', e.message));
   }
 }
