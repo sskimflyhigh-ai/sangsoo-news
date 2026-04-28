@@ -22,11 +22,17 @@ self.addEventListener('install', event => {
   );
 });
 
-// ── Activate ─────────────────────────────────────────────────
-self.addEventListener('install', event => {
+// — Activate ————————————————————————————
+self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.open(CACHE_VER)
-      .then(cache => cache.addAll(STATIC))
+    caches.keys()
+      .then(keys => Promise.all(
+        keys.filter(k => k !== CACHE_VER).map(k => caches.delete(k))
+      ))
+      .then(() => {
+        console.log('[SW] 활성화됨 - 캐시 버전:', CACHE_VER);
+        return self.clients.claim();
+      })
   );
 });
 // ── Fetch ─────────────────────────────────────────────────────
